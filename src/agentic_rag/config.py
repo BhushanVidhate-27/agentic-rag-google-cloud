@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = Field(default=768, ge=128, le=3072)
-    chroma_mode: Literal["local", "cloud"] = "local"
+    chroma_mode: Literal["local", "cloud", "firestore"] = "local"
+    google_cloud_project: str = ""
+    firestore_collection: str = "rag_chunks"
     chroma_path: str = "./data/chroma"
     chroma_collection: str = "documents"
     chroma_api_key: str = ""
