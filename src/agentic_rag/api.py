@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from agentic_rag.agents import AgentPipeline
 from agentic_rag.config import Settings, get_settings
 from agentic_rag.ingestion import chunk_text, extract_text, safe_filename
+from agentic_rag.firestore_store import FirestoreStore
 from agentic_rag.vector_store import ChromaStore
 
 app = FastAPI(title="Agentic RAG Assistant", version="0.1.0")
@@ -32,7 +33,9 @@ def require_key(
         raise HTTPException(status_code=401, detail="Missing or invalid API key")
 
 
-def get_store(settings: Settings = Depends(get_settings)) -> ChromaStore:
+def get_store(settings: Settings = Depends(get_settings)) -> ChromaStore | FirestoreStore:
+    if settings.chroma_mode == 'firestore':
+        return FirestoreStore(settings)
     return ChromaStore(settings)
 
 
@@ -50,7 +53,7 @@ def demo_ui() -> str:
 async def upload_document(
     file: UploadFile = File(...),
     settings: Settings = Depends(get_settings),
-    store: ChromaStore = Depends(get_store),
+    store: ChromaStore | FirestoreStore = Depends(get_store),
 ) -> dict:
     try:
         filename = safe_filename(file.filename or "")
