@@ -1,10 +1,10 @@
 # Agentic RAG Assistant on Google Cloud
 
-Document-grounded multi-agent question answering using Google ADK, Gemini embeddings, ChromaDB, and FastAPI.
+Document-grounded multi-agent question answering using Google ADK, Gemini embeddings, FastAPI, and **ChromaDB locally / Firestore vector search on Google Cloud Run**.
 
 ## Architecture
 
-1. Upload PDFs or UTF-8 text; extract text, split with overlap, embed with Gemini, and index in Chroma.
+1. Upload PDFs or UTF-8 text; extract text, split with overlap, embed with Gemini, and index in ChromaDB (local) or Firestore (Cloud Run).
 2. ADK router decides if retrieval is needed; retrieval worker obtains similar chunks.
 3. ADK answer agent cites [S1], [S2] source excerpts or abstains when documents cannot support an answer.
 4. Responses expose source excerpts, retrieval distance, request latency, route, and token usage when available.
@@ -41,19 +41,19 @@ API_ACCESS_KEY=YOUR_API_ACCESS_KEY python scripts/evaluate.py --dataset eval/sam
 
 Upload examples/handbook.txt before evaluation. Source-hit rate and approximate answer-substring accuracy are calculated from the supplied evaluation dataset. **No benchmark results, production deployment, operating costs, or source corpus size are claimed in advance.**
 
-## Cloud Run deployment
+## Cloud Run deployment (no Chroma Cloud signup)
 
-Use **Chroma Cloud** for durable vectors: Cloud Run local disk is ephemeral.
+**Chroma Cloud is winding down**, so new signups are disabled. The Google Cloud Run deployment now uses **Firestore native vector search**, which has persistent storage and is managed within your existing Google Cloud project. Local development **still uses open-source ChromaDB**; no changes are required for running locally.
 
-**Follow [the Cloud Run setup guide](docs/CLOUD_RUN_SETUP.md)** to set up your Google Cloud project, secret versions, two service accounts, and GitHub Workload Identity Federation. The repository includes a **manual** GitHub Actions workflow under **Actions > Deploy to Google Cloud Run** that deploys from main after you configure the documented repository variables.
+See **[Cloud Run + Firestore setup](docs/CLOUD_RUN_SETUP.md)** for Firestore vector index creation, Google Secret Manager configuration, IAM, short-lived GitHub Actions authentication, and the manual deployment workflow. Live deployment still requires your own Google Cloud project, Gemini Developer API key, a Firestore database, and permissions. Pushing this repository alone does not deploy anything.
 
-Deployment is private and requires IAM Cloud Run Invoker **and** an X-API-Key header. The project uses a Gemini Developer API key, not Vertex AI credentials. **Pushing to GitHub does not deploy or execute a live model evaluation.**
+The service remains private and requests require both Cloud Run IAM authorization and the X-API-Key application key.
 
 ## Security and limitations
 
 - **Single tenant:** all uploaded documents share one corpus and API key. Add per-user authentication and tenant separation for real customers.
 - Uploads are size/chunk limited; only extractable PDF text and UTF-8 TXT are supported (no OCR).
-- Uploaded originals are not retained; Chroma stores embedded snippets. Re-uploading the same filename replaces its previous chunks.
+- Uploaded originals are not retained; Chroma stores embedded snippets. Re-uploading the same filename replaces its previous chunks in either backend.
 - Retrieved text is treated as untrusted, but prompt injection and model errors remain possible; inspect source citations.
 - Vector distance is not a calibrated confidence score. ADK sessions are ephemeral per request.
 - API key is required for data endpoints; /health is publicly readable.
