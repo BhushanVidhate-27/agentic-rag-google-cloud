@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: agentic-rag-preview
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DEMO_MODE
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"
