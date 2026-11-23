@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from agentic_rag.agents import AgentPipeline
 from agentic_rag.config import Settings, get_settings
+from agentic_rag.demo import DemoQuestion, demo_answer
 from agentic_rag.firestore_store import FirestoreStore
 from agentic_rag.ingestion import chunk_text, extract_text, safe_filename
 from agentic_rag.vector_store import ChromaStore
@@ -27,6 +28,8 @@ def require_key(
     x_api_key: Annotated[str | None, Header()] = None,
     settings: Settings = Depends(get_settings),
 ) -> None:
+    if settings.demo_mode:
+        raise HTTPException(status_code=403, detail="Data API disabled in public demo")
     if not settings.api_access_key or not x_api_key:
         raise HTTPException(status_code=401, detail="Missing or invalid API key")
     if not hmac.compare_digest(x_api_key, settings.api_access_key):
@@ -45,8 +48,16 @@ def health() -> dict:
 
 
 @app.get("/", response_class=HTMLResponse)
-def demo_ui() -> str:
-    return (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+def demo_ui(settings: Settings = Depends(get_settings)) -> str:
+    filename = "demo.html" if settings.demo_mode else "index.html"
+    return (Path(__file__).parent / "static" / filename).read_text(encoding="utf-8")
+
+
+@app.post("/demo/ask")
+def ask_demo(request: DemoQuestion, settings: Settings = Depends(get_settings)) -> dict:
+    if not settings.demo_mode:
+        raise HTTPException(status_code=404, detail="Demo is not enabled")
+    return demo_answer(request.question)
 
 
 @app.post("/v1/documents", dependencies=[Depends(require_key)])
