@@ -36,26 +36,18 @@ curl -X POST http://localhost:8000/v1/ask -H "X-API-Key: YOUR_KEY" -H "Content-T
 ~~~bash
 ruff check .
 pytest -q
-python scripts/evaluate.py --dataset eval/sample.jsonl --base-url http://localhost:8000
+API_ACCESS_KEY=YOUR_API_ACCESS_KEY python scripts/evaluate.py --dataset eval/sample.jsonl --base-url http://localhost:8000
 ~~~
 
 Upload examples/handbook.txt before evaluation. Source-hit rate and approximate answer-substring accuracy are calculated from the supplied evaluation dataset. **No benchmark results, production deployment, operating costs, or source corpus size are claimed in advance.**
 
 ## Cloud Run deployment
 
-Use **Chroma Cloud** for durable vectors: Cloud Run local disk is ephemeral. Create Secret Manager secrets named gemini-api-key, chroma-api-key, and rag-api-access-key; grant the runtime service identity access to them. Configure a Chroma Cloud tenant/database, then:
+Use **Chroma Cloud** for durable vectors: Cloud Run local disk is ephemeral.
 
-~~~bash
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
-export GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID
-export CHROMA_TENANT=YOUR_TENANT
-export CHROMA_DATABASE=YOUR_DATABASE
-bash scripts/deploy.sh
-~~~
+**Follow [the Cloud Run setup guide](docs/CLOUD_RUN_SETUP.md)** to set up your Google Cloud project, secret versions, two service accounts, and GitHub Workload Identity Federation. The repository includes a **manual** GitHub Actions workflow under **Actions > Deploy to Google Cloud Run** that deploys from main after you configure the documented repository variables.
 
-Deployment requires IAM Cloud Run Invoker **and** an X-API-Key header. The project uses the Gemini Developer API key, not Vertex AI credentials. Service is not deployed by merely pushing GitHub code.
+Deployment is private and requires IAM Cloud Run Invoker **and** an X-API-Key header. The project uses a Gemini Developer API key, not Vertex AI credentials. **Pushing to GitHub does not deploy or execute a live model evaluation.**
 
 ## Security and limitations
 
