@@ -1,72 +1,99 @@
-# Cloud Run launch checklist
+# Deploy Agentic RAG on Google Cloud Run with Firestore vector search
 
-This repo contains a **manual GitHub Actions deployment workflow**. It does not have permission to create Google Cloud accounts, obtain your Gemini key, or provision a billing-enabled project by itself.
+**Why Firestore?** Chroma Cloud stopped accepting new signups following its October 2026 wind-down announcement. This project now uses **ChromaDB PersistentClient locally** and **Firestore vector search on Cloud Run**. You need no Chroma Cloud account. This changes the hosted vector store, but keeps Gemini, Google ADK, FastAPI, and Cloud Run.
 
-## 1. Prepare external services (user action)
+## Prerequisites
 
-1. Create/select a billing-enabled Google Cloud project: https://console.cloud.google.com/
-2. Obtain a **Gemini Developer API** key in Google AI Studio: https://aistudio.google.com/app/apikey
-3. Create a Chroma Cloud database and API key at https://www.trychroma.com/. Local Chroma storage is **not durable on Cloud Run**.
-4. Use Google Cloud Secret Manager https://console.cloud.google.com/security/secret-manager to create **three secrets with actual versions**:
-   - gemini-api-key: your Gemini Developer API key
-   - chroma-api-key: your Chroma Cloud API key
-   - rag-api-access-key: a long, random string used in the X-API-Key header
-5. Never put these secret values in GitHub repository variables, source code, issues, comments, logs, or chat messages.
+- A Google Cloud project with billing enabled
+- Gemini Developer API key from https://aistudio.google.com/app/apikey
+- Permissions to manage IAM, Secret Manager, Firestore, and Cloud Run
+- Google Cloud CLI installed and authenticated locally
+- A GitHub repository already containing the project
 
-## 2. Enable APIs and provision two service accounts
+**Never provide your Gemini/API access keys to this chat or commit them to GitHub.**
 
-Install the Google Cloud CLI, authenticate using your Google account, and select the project:
+## 1. Prepare Google Cloud resources
 
 ~~~bash
 export PROJECT_ID="YOUR_PROJECT_ID"
 gcloud auth login
 gcloud config set project "$PROJECT_ID"
+
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com \
-  iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
+  firestore.googleapis.com iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 
 export PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
-gcloud iam service-accounts create rag-github-deployer --display-name="RAG GitHub deployer"
-gcloud iam service-accounts create rag-cloudrun-runtime --display-name="RAG runtime"
-export DEPLOY_SA="rag-github-deployer@$PROJECT_ID.iam.gserviceaccount.com"
-export RUNTIME_SA="rag-cloudrun-runtime@$PROJECT_ID.iam.gserviceaccount.com"
 ~~~
 
-Give your **deployer** only the rights needed to deploy source to Cloud Run, work with builds/artifacts, and act as the runtime service account. The sample below uses several project-wide roles for initial setup; tighten these by resource/role in production.
+Create a **Firestore database in Native mode**, choosing an appropriate region. Use the [Firestore console](https://console.cloud.google.com/firestore/databases). An existing default Firestore database is also fine.
+
+Then create the vector index. **The vector dimension must equal the GEMINI embedding output dimensionality** configured by this app (default 768):
 
 ~~~bash
+gcloud firestore indexes composite create \
+  --collection-group="rag_chunks" \
+  --query-scope=COLLECTION \
+  --field-config field-path=embedding,vector-config='{"dimension":"768","flat":"{}"}' \
+  --database="(default)"
+~~~
+
+Wait until the index finishes building (check Firestore > Indexes). **Firestore vector search fails until the index is ready.** If an index already exists, do not create a duplicate.
+
+## 2. Create secrets in Secret Manager
+
+Create two secrets, each with an actual value/version:
+
+| Secret ID | Store this confidential value |
+| --- | --- |
+| `gemini-api-key` | Gemini Developer API key |
+| `rag-api-access-key` | A long, cryptographically random string; your separate application API key |
+
+Use the [Google Secret Manager console](https://console.cloud.google.com/security/secret-manager) to create them. Do not add keys to repository variables or logs.
+
+## 3. Create identities and grant permissions
+
+~~~bash
+gcloud iam service-accounts create rag-github-deployer \
+  --display-name="RAG GitHub deployer"
+gcloud iam service-accounts create rag-cloudrun-runtime \
+  --display-name="RAG runtime"
+
+export DEPLOY_SA="rag-github-deployer@$PROJECT_ID.iam.gserviceaccount.com"
+export RUNTIME_SA="rag-cloudrun-runtime@$PROJECT_ID.iam.gserviceaccount.com"
+
+# For a demo: project-wide permissions for deployment. Restrict these in production.
 for ROLE in roles/run.admin roles/cloudbuild.builds.editor roles/artifactregistry.admin roles/storage.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$DEPLOY_SA" --role="$ROLE"
 done
 
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
-  --member="serviceAccount:$DEPLOY_SA" --role="roles/iam.serviceAccountUser"
-~~~
+  --member="serviceAccount:$DEPLOY_SA" \
+  --role="roles/iam.serviceAccountUser"
 
-Cloud Build's build identity may need project-specific Cloud Build/Artifact Registry permissions depending on your existing project settings.
+# Firestore access only from the runtime identity.
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$RUNTIME_SA" \
+  --role="roles/datastore.user"
 
-Allow the **runtime account**, not your repository, to access only the three required Secret Manager secrets:
-
-~~~bash
-for SECRET in gemini-api-key chroma-api-key rag-api-access-key; do
+for SECRET in gemini-api-key rag-api-access-key; do
   gcloud secrets add-iam-policy-binding "$SECRET" \
     --member="serviceAccount:$RUNTIME_SA" \
     --role="roles/secretmanager.secretAccessor"
 done
 ~~~
 
-## 3. One-time GitHub OIDC federation
+Cloud Build's build service account may also need role assignments depending on your Google Cloud project's configuration.
 
-These commands restrict the trust provider to **this repository's main branch**. The GitHub workflow uses temporary OIDC credentials; no Google Cloud private service-account JSON key needs to be stored in GitHub.
+## 4. Enable GitHub Workload Identity Federation (no JSON key)
 
 ~~~bash
 gcloud iam workload-identity-pools create github-rag \
   --location="global" --display-name="RAG GitHub Actions"
 
 gcloud iam workload-identity-pools providers create-oidc github-main \
-  --location="global" \
-  --workload-identity-pool="github-rag" \
+  --location="global" --workload-identity-pool="github-rag" \
   --issuer-uri="https://token.actions.githubusercontent.com" \
   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
   --attribute-condition="assertion.repository=='BhushanVidhate-27/agentic-rag-google-cloud' && assertion.ref=='refs/heads/main'"
@@ -76,42 +103,39 @@ gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
   --role="roles/iam.workloadIdentityUser"
 ~~~
 
-If a pool/provider already exists, inspect it and avoid overwriting its conditions. Documentation: https://github.com/google-github-actions/auth#setting-up-workload-identity-federation
+If the pool/provider already exists, inspect and reuse rather than overwrite it. Federation reference: https://github.com/google-github-actions/auth
 
-## 4. Configure GitHub repository variables
+## 5. Add nonsecret GitHub Actions variables
 
 Open https://github.com/BhushanVidhate-27/agentic-rag-google-cloud/settings/variables/actions
 
-Under **Repository variables**, add the following **non-secret** values:
+| Variable | Example/meaning |
+| --- | --- |
+| `GCP_PROJECT_ID` | Your actual GCP project ID |
+| `GCP_WIF_PROVIDER` | `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-rag/providers/github-main` |
+| `GCP_DEPLOY_SA` | `rag-github-deployer@PROJECT_ID.iam.gserviceaccount.com` |
+| `GCP_RUNTIME_SA` | `rag-cloudrun-runtime@PROJECT_ID.iam.gserviceaccount.com` |
+| `GCP_REGION` | `us-central1` or your preferred Cloud Run region |
+| `FIRESTORE_COLLECTION` | `rag_chunks` (optional; must match vector index collection group) |
 
-| Name | Value |
-| ---- | ----- |
-| GCP_PROJECT_ID | your Google Cloud project ID |
-| GCP_WIF_PROVIDER | projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-rag/providers/github-main |
-| GCP_DEPLOY_SA | rag-github-deployer@PROJECT_ID.iam.gserviceaccount.com |
-| GCP_RUNTIME_SA | rag-cloudrun-runtime@PROJECT_ID.iam.gserviceaccount.com |
-| GCP_REGION | us-central1 (or your chosen region) |
-| CHROMA_TENANT | your Chroma Cloud tenant |
-| CHROMA_DATABASE | your Chroma Cloud database |
+Ensure the GitHub **production** environment exists and allows deployment from main.
 
-Ensure the **production** GitHub environment exists and permits deployments from main. If environment-scoped variables are used instead, they must be available to the production job.
+## 6. Deploy manually
 
-## 5. Start deployment
+Go to https://github.com/BhushanVidhate-27/agentic-rag-google-cloud/actions/workflows/deploy-cloud-run.yml and click **Run workflow** on main.
 
-Open https://github.com/BhushanVidhate-27/agentic-rag-google-cloud/actions/workflows/deploy-cloud-run.yml
+The workflow deploys a private Cloud Run service, injects secrets by reference, and configures `CHROMA_MODE=firestore`. Your GitHub repository does not need any external vector-database signup.
 
-Choose **Run workflow**, select branch **main**, and run. Cloud Run service is **private**, and Secret Manager keys are injected by name. The job prints the new URL when deployment succeeds.
+## 7. Smoke test and evaluate against real Gemini
 
-## 6. Run real smoke test and document evaluation
-
-An authenticated Cloud Run caller must have roles/run.invoker for the service. For an interactive development account with that permission:
+An identity granted `roles/run.invoker` on the service can call the private Cloud Run URL. Set the API key in your local shell without printing or committing it.
 
 ~~~bash
 export REGION="us-central1"
-export URL="$(gcloud run services describe agentic-rag-assistant --region "$REGION" --format='value(status.url)')"
+export URL="$(gcloud run services describe agentic-rag-assistant \
+  --region "$REGION" --format='value(status.url)')"
 export CLOUD_RUN_ID_TOKEN="$(gcloud auth print-identity-token)"
-# In this terminal, securely provide the rag-api-access-key value as API_ACCESS_KEY.
-# Do not paste it into the repository or a chat message.
+
 curl -fsS "$URL/health" -H "Authorization: Bearer $CLOUD_RUN_ID_TOKEN"
 
 curl -fsS -X POST "$URL/v1/documents" \
@@ -119,11 +143,14 @@ curl -fsS -X POST "$URL/v1/documents" \
   -H "X-API-Key: $API_ACCESS_KEY" \
   -F "file=@examples/handbook.txt"
 
-python scripts/evaluate.py --dataset eval/sample.jsonl --base-url "$URL"
+API_ACCESS_KEY="$API_ACCESS_KEY" CLOUD_RUN_ID_TOKEN="$CLOUD_RUN_ID_TOKEN" \
+  python scripts/evaluate.py --dataset eval/sample.jsonl --base-url "$URL"
 ~~~
 
-The evaluation script uses API_ACCESS_KEY and optionally CLOUD_RUN_ID_TOKEN from environment. Short-lived ID tokens expire and may need refreshing. **Report actual results only** after the API is configured and the evaluation runs.
+Do not report a benchmark score until you have run this against the actual deployed model and evaluation dataset. The evaluation script's substring metric is an approximation, not human-rated answer accuracy.
 
-## Costs, privacy, and caveats
+## Security, data, and cost
 
-Gemini embedding/generation, Chroma Cloud, Cloud Build, Artifact Registry, and Cloud Run can incur charges. The sample config caps Cloud Run at 2 instances and scales to zero when idle, but this does not cap total spend. This demonstration has **single-corpus API-key security**, so do not use it for sensitive multi-tenant datasets. Approval/billing/IAM setup must be completed by a Google Cloud project administrator.
+This starter is **single-tenant** and uses one shared API key. Retrieved documents may be confidential; do not expose the service publicly or use real private data without additional access controls. Firestore stores text snippets and vectors (not original PDF files). Cloud Run and Firestore have their own usage-based charges and quotas. Consider configuring Google Cloud budgets and alerts before deployment.
+
+This route does **not** depend on Chroma Cloud. Local usage still runs on open-source ChromaDB.
