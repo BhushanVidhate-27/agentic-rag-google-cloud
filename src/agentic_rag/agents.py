@@ -4,6 +4,7 @@ Each request uses fresh in-memory sessions. Extract ADK text events instead of r
 on a particular final event object.
 """
 
+import os
 import uuid
 from dataclasses import dataclass
 
@@ -22,6 +23,12 @@ class AgentResult:
 
 
 async def run_adk(prompt: str, instruction: str, settings: Settings) -> AgentResult:
+    if not settings.gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is required for ADK agents")
+    # Pydantic reads .env but does not populate os.environ. ADK needs GOOGLE_API_KEY.
+    # The same Gemini Developer API key is shared by both the ADK and embedder.
+    os.environ.setdefault("GOOGLE_API_KEY", settings.gemini_api_key)
+    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "FALSE")
     agent = LlmAgent(
         name="grounded_assistant",
         model=settings.gemini_model,
