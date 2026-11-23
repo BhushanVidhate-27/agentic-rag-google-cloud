@@ -25,15 +25,11 @@ jobs:
           WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
           DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
           RUNTIME_SA: ${{ vars.GCP_RUNTIME_SA }}
-          CHROMA_TENANT: ${{ vars.CHROMA_TENANT }}
-          CHROMA_DATABASE: ${{ vars.CHROMA_DATABASE }}
         run: |
           test -n "$PROJECT_ID" || { echo "Missing GCP_PROJECT_ID variable"; exit 1; }
           test -n "$WIF_PROVIDER" || { echo "Missing GCP_WIF_PROVIDER variable"; exit 1; }
           test -n "$DEPLOY_SA" || { echo "Missing GCP_DEPLOY_SA variable"; exit 1; }
           test -n "$RUNTIME_SA" || { echo "Missing GCP_RUNTIME_SA variable"; exit 1; }
-          test -n "$CHROMA_TENANT" || { echo "Missing CHROMA_TENANT variable"; exit 1; }
-          test -n "$CHROMA_DATABASE" || { echo "Missing CHROMA_DATABASE variable"; exit 1; }
 
       - name: Authenticate with short-lived Google Cloud credentials (OIDC)
         uses: google-github-actions/auth@v3
@@ -52,8 +48,7 @@ jobs:
           GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
           REGION: ${{ vars.GCP_REGION || 'us-central1' }}
           RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RUNTIME_SA }}
-          CHROMA_TENANT: ${{ vars.CHROMA_TENANT }}
-          CHROMA_DATABASE: ${{ vars.CHROMA_DATABASE }}
+          FIRESTORE_COLLECTION: ${{ vars.FIRESTORE_COLLECTION || 'rag_chunks' }}
         run: bash scripts/deploy.sh
 
       - name: Print deployed service URL
