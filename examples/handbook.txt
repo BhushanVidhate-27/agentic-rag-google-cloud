@@ -1,0 +1,11 @@
+FICTIONAL EXAMPLE HANDBOOK — NOT REAL COMPANY POLICY
+
+Incident response: For a Priority 1 (P1) incident, the on-call incident commander coordinates the response. The service owner investigates the affected service. The communications lead posts customer updates every thirty minutes.
+
+Security: Employees must use multifactor authentication on production accounts. Credentials must never be committed to source code repositories.
+
+Onboarding: A new employee receives access to the engineering knowledge base after manager approval.
+
+Escalation: If an incident is unresolved after thirty minutes, the incident commander pages the infrastructure lead.
+
+Support: Customer requests should be acknowledged within one business day. The support team tracks resolution in the internal ticketing system.
