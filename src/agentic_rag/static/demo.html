@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agentic RAG — Public Preview</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#090f1b;color:#eaf2ff}
+*{box-sizing:border-box}body{max-width:920px;margin:0 auto;padding:40px 20px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-size:clamp(2rem,5vw,3.4rem);letter-spacing:-.05em;margin:24px 0 8px}
+p{color:#aebbd0;line-height:1.6}small{color:#b5c4d9}
+.tag{border:1px solid #385071;padding:6px 12px;border-radius:99px;font-size:12px;color:#a8d3ff}
+main{display:grid;grid-template-columns:1fr 1.5fr;gap:18px;margin-top:30px}
+.panel{background:#151f30;border:1px solid #30435d;border-radius:16px;padding:22px}
+h2{font-size:17px;margin-top:0}.pill{display:block;width:100%;text-align:left;background:#202f47;color:#dbe9ff;border:1px solid #3c5375;padding:12px;border-radius:9px;margin:10px 0;cursor:pointer}
+textarea{width:100%;min-height:110px;background:#0b1423;border:1px solid #435a78;border-radius:10px;color:white;padding:14px;font:inherit}
+.primary{background:#80adff;color:#071126;font-weight:700;border:0;border-radius:9px;padding:12px 20px;margin-top:10px;cursor:pointer}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.6}
+.source{border-top:1px solid #30435d;margin-top:18px;padding-top:14px;color:#b7c9e3;font-size:14px}
+footer{font-size:13px;margin-top:26px;color:#91a5c1}
+@media(max-width:700px){main{grid-template-columns:1fr}body{padding:20px}}
+</style></head><body>
+<header><strong>◈ Agentic RAG</strong><span class="tag">Safe public preview</span></header>
+<h1>Ask a document.<br>See the evidence.</h1>
+<p>Explore a fictional incident-response handbook. This preview uses deterministic keyword retrieval, not Gemini. No API keys, uploads, billing account, or user data required.</p>
+<main><section class="panel"><h2>Sample questions</h2>
+<button class="pill" data-question="Who coordinates a P1 incident?">Who coordinates a P1 incident?</button>
+<button class="pill" data-question="How often are customer updates posted?">How often are customer updates posted?</button>
+<button class="pill" data-question="What is the security policy?">What is the security policy?</button>
+<button class="pill" data-question="How are support requests handled?">How are support requests handled?</button>
+<small>Sample source: fictional handbook.txt</small></section>
+<section class="panel"><h2>Document question</h2><label for="question">Your question</label>
+<textarea id="question" maxlength="300" placeholder="Ask about incidents, security, onboarding, or support"></textarea>
+<button class="primary" id="ask">Retrieve evidence</button>
+<h2 style="margin-top:28px">Answer</h2><pre id="answer" aria-live="polite">Choose a question to start.</pre>
+<div id="sources"></div></section></main>
+<footer>Preview mode only. No model inference or persistent storage. The full repository supports Google ADK, Gemini, ChromaDB, and Firestore when configured privately.</footer>
+<script>
+const q=document.getElementById("question"),a=document.getElementById("answer"),s=document.getElementById("sources"),btn=document.getElementById("ask");
+async function ask(){if(!q.value.trim())return;btn.disabled=true;a.textContent="Retrieving...";s.replaceChildren();
+try{const response=await fetch("/demo/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question:q.value})});
+const data=await response.json();a.textContent=data.answer||JSON.stringify(data);
+for(const source of data.sources||[]){const node=document.createElement("div");node.className="source";const title=document.createElement("strong");title.textContent="["+source.id+"] "+source.source;const p=document.createElement("p");p.textContent=source.text;node.append(title,p);s.append(node)}}
+catch(e){a.textContent="Unable to retrieve the sample answer. Please retry."}finally{btn.disabled=false}}
+btn.onclick=ask;
+document.querySelectorAll("[data-question]").forEach(el=>el.onclick=()=>{q.value=el.dataset.question;ask()});
+</script></body></html>
