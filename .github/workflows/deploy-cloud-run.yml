@@ -1,0 +1,66 @@
+name: Deploy to Google Cloud Run
+
+# Deliberately manual: prevents deployment/costs on every code push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm required configuration
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
+          RUNTIME_SA: ${{ vars.GCP_RUNTIME_SA }}
+          CHROMA_TENANT: ${{ vars.CHROMA_TENANT }}
+          CHROMA_DATABASE: ${{ vars.CHROMA_DATABASE }}
+        run: |
+          test -n "$PROJECT_ID" || { echo "Missing GCP_PROJECT_ID variable"; exit 1; }
+          test -n "$WIF_PROVIDER" || { echo "Missing GCP_WIF_PROVIDER variable"; exit 1; }
+          test -n "$DEPLOY_SA" || { echo "Missing GCP_DEPLOY_SA variable"; exit 1; }
+          test -n "$RUNTIME_SA" || { echo "Missing GCP_RUNTIME_SA variable"; exit 1; }
+          test -n "$CHROMA_TENANT" || { echo "Missing CHROMA_TENANT variable"; exit 1; }
+          test -n "$CHROMA_DATABASE" || { echo "Missing CHROMA_DATABASE variable"; exit 1; }
+
+      - name: Authenticate with short-lived Google Cloud credentials (OIDC)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Deploy private Cloud Run service
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RUNTIME_SA }}
+          CHROMA_TENANT: ${{ vars.CHROMA_TENANT }}
+          CHROMA_DATABASE: ${{ vars.CHROMA_DATABASE }}
+        run: bash scripts/deploy.sh
+
+      - name: Print deployed service URL
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          gcloud run services describe agentic-rag-assistant \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format="value(status.url)"
