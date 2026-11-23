@@ -41,6 +41,12 @@ API_ACCESS_KEY=YOUR_API_ACCESS_KEY python scripts/evaluate.py --dataset eval/sam
 
 Upload examples/handbook.txt before evaluation. Source-hit rate and approximate answer-substring accuracy are calculated from the supplied evaluation dataset. **No benchmark results, production deployment, operating costs, or source corpus size are claimed in advance.**
 
+## Free public Render preview (no billing account)
+
+The repository includes [render.yaml](render.yaml) and a [step-by-step Render deployment guide](docs/RENDER_DEMO.md). Create a **New > Blueprint** in Render, connect this repository, and confirm that the proposed Docker service uses the **Free** plan.
+
+The preview uses a **fictional bundled handbook and deterministic keyword retrieval**, not live Gemini or ADK inference. It requires no secrets or external database. The demo is read-only; /v1 document uploads and private question-answer endpoints are disabled with DEMO_MODE=true. This makes it safe to share without exposing a Gemini API key. It is a UI and retrieval demonstration, not a measured model benchmark.
+
 ## Cloud Run deployment (no Chroma Cloud signup)
 
 **Chroma Cloud is winding down**, so new signups are disabled. The Google Cloud Run deployment now uses **Firestore native vector search**, which has persistent storage and is managed within your existing Google Cloud project. Local development **still uses open-source ChromaDB**; no changes are required for running locally.
