@@ -17,7 +17,15 @@ def evaluate(dataset: Path, base_url: str, api_key: str) -> dict:
         request = urllib.request.Request(
             base_url.rstrip("/") + "/v1/ask",
             data=json.dumps({"question": record["question"]}).encode(),
-            headers={"Content-Type": "application/json", "X-API-Key": api_key},
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key,
+                **(
+                    {"Authorization": "Bearer " + os.environ["CLOUD_RUN_ID_TOKEN"]}
+                    if os.getenv("CLOUD_RUN_ID_TOKEN")
+                    else {}
+                ),
+            },
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=90) as response:
