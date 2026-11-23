@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentic RAG Assistant</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color-scheme:dark;background:#0c111b;color:#edf3fa}
+    *{box-sizing:border-box}body{max-width:780px;margin:48px auto;padding:0 20px}
+    h1{font-size:30px}p{color:#b0bbcc}section{background:#182231;border:1px solid #314050;
+    border-radius:12px;padding:20px;margin:20px 0}input,button,textarea{font:inherit}
+    input,textarea{width:100%;background:#0c111b;color:#fff;padding:12px;border:1px solid #526276;
+    border-radius:8px;margin:8px 0}button{border:0;background:#8caeff;color:#081326;padding:11px 16px;
+    border-radius:8px;cursor:pointer;font-weight:700}button:disabled{opacity:.5}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c111b;padding:16px;border-radius:8px}
+    article{border-top:1px solid #344055;padding:14px 0}small{color:#b9c4d4}
+  </style>
+</head>
+<body>
+  <h1>Agentic RAG Assistant</h1>
+  <p>Upload documents and ask questions grounded in their actual content.</p>
+  <section><label for="key">API access key</label><input id="key" type="password" autocomplete="off"
+    placeholder="API_ACCESS_KEY from .env"><small>Held in this page only; not stored.</small></section>
+  <section><h2>1. Index a document</h2><input id="file" type="file" accept=".pdf,.txt">
+    <button id="upload">Upload</button><pre id="upload-result" aria-live="polite"></pre></section>
+  <section><h2>2. Ask</h2><textarea id="question" rows="3"
+    placeholder="What does the document say about incident response?"></textarea>
+    <button id="ask">Ask documents</button><h3>Answer</h3>
+    <pre id="answer" aria-live="polite"></pre><div id="sources"></div></section>
+  <script>
+  const byId=id=>document.getElementById(id);
+  const headers=()=>({'X-API-Key':byId('key').value});
+  const message=e=>e?.message||String(e);
+  byId('upload').onclick=async()=>{
+    const file=byId('file').files[0];
+    if(!file){byId('upload-result').textContent='Choose a PDF or TXT file.';return}
+    const form=new FormData();form.append('file',file);
+    byId('upload').disabled=true;
+    try{const r=await fetch('/v1/documents',{method:'POST',headers:headers(),body:form});
+      const data=await r.json();byId('upload-result').textContent=JSON.stringify(data,null,2)}
+    catch(e){byId('upload-result').textContent=message(e)}
+    finally{byId('upload').disabled=false}
+  };
+  byId('ask').onclick=async()=>{
+    const q=byId('question').value.trim();if(!q)return;
+    byId('ask').disabled=true;byId('answer').textContent='Searching documents...';
+    byId('sources').replaceChildren();
+    try{const r=await fetch('/v1/ask',{method:'POST',
+      headers:{...headers(),'Content-Type':'application/json'},
+      body:JSON.stringify({question:q})});const data=await r.json();
+      byId('answer').textContent=data.answer||JSON.stringify(data);
+      for(const source of data.sources||[]){
+        const article=document.createElement('article');
+        const heading=document.createElement('strong');
+        heading.textContent='['+source.id+'] '+source.source+' — chunk '+source.chunk_index;
+        const text=document.createElement('p');text.textContent=source.text;
+        article.append(heading,text);byId('sources').append(article)
+      }
+    }catch(e){byId('answer').textContent=message(e)}
+    finally{byId('ask').disabled=false}
+  };
+  </script>
+</body></html>
